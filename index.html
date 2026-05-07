@@ -485,12 +485,31 @@ async function saveEdit(key) {
   const tops = Array.from(document.querySelectorAll('input[name="editTopic"]:checked')).map(cb => cb.value);
   if (!text || !person) { showToast('Quote text and person are required'); return; }
   const updates = { text, person, membership, chapter, topics: tops };
-  await fetch(DB_URL + '/quotes/' + key + '.json', { method: 'PATCH', body: JSON.stringify(updates), headers: { 'Content-Type': 'application/json' } });
   const q = quotes.find(q => q._key === key);
+  const oldPerson = q ? q.person : '';
+  const membershipChanged = q && q.membership !== membership;
+  const chapterChanged = q && q.chapter !== chapter;
+  await fetch(DB_URL + '/quotes/' + key + '.json', { method: 'PATCH', body: JSON.stringify(updates), headers: { 'Content-Type': 'application/json' } });
   if (q) Object.assign(q, updates);
+  // If membership or chapter changed, update all quotes for this person
+  if ((membershipChanged || chapterChanged) && person) {
+    const others = quotes.filter(oq => oq.person === person && oq._key !== key);
+    if (others.length > 0 && confirm('Update ' + (membershipChanged ? 'membership type' : '') + (membershipChanged && chapterChanged ? ' and ' : '') + (chapterChanged ? 'chapter' : '') + ' for all ' + (others.length + 1) + ' quotes by ' + person + '?')) {
+      for (const oq of others) {
+        const patch = {};
+        if (membershipChanged) { patch.membership = membership; oq.membership = membership; }
+        if (chapterChanged) { patch.chapter = chapter; oq.chapter = chapter; }
+        await fetch(DB_URL + '/quotes/' + oq._key + '.json', { method: 'PATCH', body: JSON.stringify(patch), headers: { 'Content-Type': 'application/json' } });
+      }
+      showToast('Updated ' + (others.length + 1) + ' quotes for ' + person);
+    } else {
+      showToast('Quote saved!');
+    }
+  } else {
+    showToast('Quote saved!');
+  }
   editingKey = null;
   renderQuotes();
-  showToast('Quote saved!');
 }
 
 // --- Delete ---
