@@ -91,6 +91,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 .card-btn:hover { background: #f0f0f0; color: #333; }
 .card-btn.delete:hover { background: #ffebee; color: #c62828; border-color: #ef9a9a; }
 
+.bulk-check { position: absolute; top: 14px; left: -32px; width: 18px; height: 18px; cursor: pointer; accent-color: #1a5632; }
+.quote-card.selected { border-left-color: #1565c0; background: #f0f4ff; }
+.bulk-bar { display: none; background: #1565c0; color: white; padding: 12px 20px; border-radius: 10px; margin-bottom: 12px; align-items: center; gap: 12px; flex-wrap: wrap; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.bulk-bar.active { display: flex; }
+.bulk-bar span { font-size: 14px; font-weight: 600; }
+.bulk-bar select { padding: 5px 8px; border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; font-size: 12px; background: rgba(255,255,255,0.15); color: white; }
+.bulk-bar select option { color: #333; background: white; }
+.bulk-bar .bulk-btn { padding: 5px 12px; border: 1px solid rgba(255,255,255,0.4); border-radius: 4px; background: rgba(255,255,255,0.15); color: white; font-size: 12px; cursor: pointer; font-weight: 500; }
+.bulk-bar .bulk-btn:hover { background: rgba(255,255,255,0.3); }
+.bulk-bar .bulk-btn.bulk-danger { border-color: #ef9a9a; background: rgba(198,40,40,0.5); }
+.bulk-bar .bulk-btn.bulk-danger:hover { background: rgba(198,40,40,0.8); }
+.sort-select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; background: white; cursor: pointer; color: #555; }
+.sort-select:focus { outline: none; border-color: #1a5632; }
+
 .edit-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0; }
 .edit-form textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; line-height: 1.6; font-family: inherit; resize: vertical; min-height: 100px; }
 .edit-form textarea:focus { outline: none; border-color: #1565c0; box-shadow: 0 0 0 2px rgba(21,101,192,0.15); }
@@ -179,12 +193,35 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 
   <div class="toolbar">
     <div class="count" id="resultCount"></div>
-    <div style="display:flex;gap:8px;">
+    <div style="display:flex;gap:8px;align-items:center;">
+      <select class="sort-select" id="sortSelect" onchange="renderQuotes()">
+        <option value="default">Sort: Default</option>
+        <option value="person-az">Person A–Z</option>
+        <option value="person-za">Person Z–A</option>
+        <option value="chapter">Chapter</option>
+        <option value="membership">Membership Type</option>
+        <option value="shortest">Shortest First</option>
+        <option value="longest">Longest First</option>
+        <option value="random">Random</option>
+      </select>
       <button class="btn" onclick="clearFilters()">Clear Filters</button>
       <button class="btn btn-add" id="addBtn" style="display:none;" onclick="openAddModal()">+ Add Quote</button>
       <button class="btn btn-add" id="importBtn" style="display:none;" onclick="openImportModal()">Import Quotes</button>
       <button class="btn" id="manageCatsBtn" style="display:none;" onclick="openCategoryModal()">Manage Categories</button>
     </div>
+  </div>
+
+  <div class="bulk-bar" id="bulkBar">
+    <span id="bulkCount">0 selected</span>
+    <select id="bulkTopicSelect"></select>
+    <button class="bulk-btn" onclick="bulkAddTopic()">+ Add Topic</button>
+    <button class="bulk-btn" onclick="bulkRemoveTopic()">− Remove Topic</button>
+    <select id="bulkMembershipSelect"></select>
+    <button class="bulk-btn" onclick="bulkSetMembership()">Set Membership</button>
+    <select id="bulkChapterSelect"></select>
+    <button class="bulk-btn" onclick="bulkSetChapter()">Set Chapter</button>
+    <button class="bulk-btn bulk-danger" onclick="bulkDelete()">Delete Selected</button>
+    <button class="bulk-btn" onclick="clearSelection()">Cancel</button>
   </div>
 
   <div class="quotes-grid" id="quotesGrid">
@@ -327,6 +364,7 @@ let activeTopics = new Set();
 let searchTimeout = null;
 let editingKey = null;
 let headshots = {};
+let selectedKeys = new Set();
 
 // --- Password ---
 function checkPassword() {
@@ -442,6 +480,7 @@ function toggleAdmin() {
   document.getElementById('importBtn').style.display = adminMode ? 'inline-block' : 'none';
   document.getElementById('manageCatsBtn').style.display = adminMode ? 'inline-block' : 'none';
   editingKey = null;
+  if (!adminMode) { selectedKeys.clear(); updateBulkBar(); }
   renderQuotes();
 }
 
@@ -473,6 +512,7 @@ function clearFilters() {
   document.getElementById('personFilter').value = '';
   document.getElementById('membershipFilter').value = '';
   document.getElementById('chapterFilter').value = '';
+  document.getElementById('sortSelect').value = 'default';
   activeTopics.clear();
   document.querySelectorAll('.topic-chip').forEach(c => c.classList.remove('active'));
   renderQuotes();
@@ -517,9 +557,49 @@ function headshotHtml(person) {
   return '<span class="headshot-placeholder">' + initials + '</span>';
 }
 
+function sortQuotes(arr) {
+  const mode = document.getElementById('sortSelect').value;
+  const sorted = [...arr];
+  switch (mode) {
+    case 'person-az': sorted.sort((a, b) => a.person.localeCompare(b.person)); break;
+    case 'person-za': sorted.sort((a, b) => b.person.localeCompare(a.person)); break;
+    case 'chapter': sorted.sort((a, b) => (a.chapter || '').localeCompare(b.chapter || '')); break;
+    case 'membership': sorted.sort((a, b) => (a.membership || '').localeCompare(b.membership || '')); break;
+    case 'shortest': sorted.sort((a, b) => a.text.length - b.text.length); break;
+    case 'longest': sorted.sort((a, b) => b.text.length - a.text.length); break;
+    case 'random': for (let i = sorted.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [sorted[i], sorted[j]] = [sorted[j], sorted[i]]; } break;
+  }
+  return sorted;
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulkBar');
+  if (selectedKeys.size > 0 && adminMode) {
+    bar.classList.add('active');
+    document.getElementById('bulkCount').textContent = selectedKeys.size + ' selected';
+    document.getElementById('bulkTopicSelect').innerHTML = categories.topics.map(t => '<option>' + esc(t) + '</option>').join('');
+    document.getElementById('bulkMembershipSelect').innerHTML = categories.memberships.map(m => '<option>' + esc(m) + '</option>').join('');
+    document.getElementById('bulkChapterSelect').innerHTML = categories.chapters.map(c => '<option>' + esc(c) + '</option>').join('');
+  } else {
+    bar.classList.remove('active');
+  }
+}
+
+function toggleSelect(key) {
+  if (selectedKeys.has(key)) selectedKeys.delete(key);
+  else selectedKeys.add(key);
+  updateBulkBar();
+  const cb = document.querySelector('input[data-sel="' + key + '"]');
+  if (cb) cb.checked = selectedKeys.has(key);
+  const card = cb ? cb.closest('.quote-card') : null;
+  if (card) card.classList.toggle('selected', selectedKeys.has(key));
+}
+
+function clearSelection() { selectedKeys.clear(); updateBulkBar(); renderQuotes(); }
+
 function renderQuotes() {
   const filters = getFilters();
-  const filtered = quotes.filter(q => matchesFilters(q, filters));
+  const filtered = sortQuotes(quotes.filter(q => matchesFilters(q, filters)));
   const grid = document.getElementById('quotesGrid');
   const people = new Set(quotes.map(q => q.person));
 
@@ -553,7 +633,9 @@ function renderQuotes() {
     const hasPhoto = !!headshots[pKey];
     const uploadLink = adminMode ? '<span class="upload-headshot" onclick="uploadHeadshot(\'' + pKey + '\',\'' + esc(q.person) + '\')">' + (hasPhoto ? 'change photo' : 'add photo') + '</span>' : '';
 
-    let c = '<div class="quote-card' + (isEditing ? ' editing' : '') + '" id="card-' + i + '">';
+    const isSel = selectedKeys.has(q._key);
+    let c = '<div class="quote-card' + (isEditing ? ' editing' : '') + (isSel ? ' selected' : '') + '" id="card-' + i + '" style="' + (adminMode ? 'margin-left:36px;' : '') + '">';
+    if (adminMode) c += '<input type="checkbox" class="bulk-check" data-sel="' + q._key + '"' + (isSel ? ' checked' : '') + ' onchange="toggleSelect(\'' + q._key + '\')" />';
     c += '<div class="card-actions">';
     if (adminMode) {
       c += '<button class="card-btn" onclick="startEdit(\'' + q._key + '\')">Edit</button>';
@@ -864,6 +946,83 @@ async function removeCategory(type, idx) {
   }
   renderCategoryLists();
   showToast('"' + name + '" removed');
+}
+
+// --- Copy ---
+// --- Bulk Edit ---
+async function bulkAddTopic() {
+  const topic = document.getElementById('bulkTopicSelect').value;
+  if (!topic || selectedKeys.size === 0) return;
+  let count = 0;
+  for (const key of selectedKeys) {
+    const q = quotes.find(q => q._key === key);
+    if (!q) continue;
+    if (!(q.topics || []).includes(topic)) {
+      q.topics = [...(q.topics || []), topic];
+      await fetch(DB_URL + '/quotes/' + key + '/topics.json', { method: 'PUT', body: JSON.stringify(q.topics), headers: { 'Content-Type': 'application/json' } });
+      count++;
+    }
+  }
+  showToast('Added "' + topic + '" to ' + count + ' quote' + (count !== 1 ? 's' : ''));
+  renderQuotes();
+}
+
+async function bulkRemoveTopic() {
+  const topic = document.getElementById('bulkTopicSelect').value;
+  if (!topic || selectedKeys.size === 0) return;
+  let count = 0;
+  for (const key of selectedKeys) {
+    const q = quotes.find(q => q._key === key);
+    if (!q) continue;
+    const ti = (q.topics || []).indexOf(topic);
+    if (ti !== -1) {
+      q.topics.splice(ti, 1);
+      await fetch(DB_URL + '/quotes/' + key + '/topics.json', { method: 'PUT', body: JSON.stringify(q.topics), headers: { 'Content-Type': 'application/json' } });
+      count++;
+    }
+  }
+  showToast('Removed "' + topic + '" from ' + count + ' quote' + (count !== 1 ? 's' : ''));
+  renderQuotes();
+}
+
+async function bulkSetMembership() {
+  const val = document.getElementById('bulkMembershipSelect').value;
+  if (!val || selectedKeys.size === 0) return;
+  for (const key of selectedKeys) {
+    const q = quotes.find(q => q._key === key);
+    if (!q) continue;
+    q.membership = val;
+    await fetch(DB_URL + '/quotes/' + key + '.json', { method: 'PATCH', body: JSON.stringify({ membership: val }), headers: { 'Content-Type': 'application/json' } });
+  }
+  showToast('Set membership to "' + val + '" on ' + selectedKeys.size + ' quotes');
+  renderQuotes();
+}
+
+async function bulkSetChapter() {
+  const val = document.getElementById('bulkChapterSelect').value;
+  if (!val || selectedKeys.size === 0) return;
+  for (const key of selectedKeys) {
+    const q = quotes.find(q => q._key === key);
+    if (!q) continue;
+    q.chapter = val;
+    await fetch(DB_URL + '/quotes/' + key + '.json', { method: 'PATCH', body: JSON.stringify({ chapter: val }), headers: { 'Content-Type': 'application/json' } });
+  }
+  showToast('Set chapter to "' + val + '" on ' + selectedKeys.size + ' quotes');
+  renderQuotes();
+}
+
+async function bulkDelete() {
+  const n = selectedKeys.size;
+  if (n === 0) return;
+  if (!confirm('Permanently delete ' + n + ' selected quote' + (n !== 1 ? 's' : '') + '? This cannot be undone.')) return;
+  for (const key of selectedKeys) {
+    await fetch(DB_URL + '/quotes/' + key + '.json', { method: 'DELETE' });
+    quotes = quotes.filter(q => q._key !== key);
+  }
+  selectedKeys.clear();
+  updateBulkBar();
+  renderQuotes();
+  showToast(n + ' quote' + (n !== 1 ? 's' : '') + ' deleted');
 }
 
 // --- Copy ---
