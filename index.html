@@ -81,6 +81,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 .badge-membership { background: #e8f5e9; color: #2e7d32; }
 .badge-chapter { background: #e3f2fd; color: #1565c0; }
 .badge-topic { background: #fff3e0; color: #e65100; }
+.person-detail { font-size: 12px; color: #777; font-style: italic; }
 .quote-text { font-size: 15px; line-height: 1.65; color: #444; position: relative; padding-left: 16px; }
 .quote-text::before { content: "\201C"; position: absolute; left: -4px; top: -8px; font-size: 32px; color: #1a5632; opacity: 0.3; font-family: Georgia, serif; }
 
@@ -200,6 +201,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
       <label>Person</label>
       <input type="text" id="addPerson" placeholder="Full name" />
     </div>
+    <div class="edit-row">
+      <div class="edit-field" style="flex:1;"><label>Job Title</label><input type="text" id="addJobTitle" placeholder="e.g. Principal" /></div>
+      <div class="edit-field" style="flex:1;"><label>Company</label><input type="text" id="addCompany" placeholder="e.g. Smith & Associates" /></div>
+    </div>
+    <div class="edit-field">
+      <label>ASLA Volunteer Title</label>
+      <input type="text" id="addVolunteerTitle" placeholder="e.g. Chapter President" />
+    </div>
     <div class="edit-field">
       <label>Quote Text</label>
       <textarea id="addText" rows="5" placeholder="Enter the quote..."></textarea>
@@ -231,6 +240,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
     <div class="edit-field">
       <label>Person</label>
       <input type="text" id="importPerson" placeholder="Full name" />
+    </div>
+    <div class="edit-row" style="margin-bottom:12px;">
+      <div class="edit-field" style="flex:1;"><label>Job Title</label><input type="text" id="importJobTitle" placeholder="e.g. Principal" /></div>
+      <div class="edit-field" style="flex:1;"><label>Company</label><input type="text" id="importCompany" placeholder="e.g. Smith & Associates" /></div>
+    </div>
+    <div class="edit-field" style="margin-bottom:12px;">
+      <label>ASLA Volunteer Title</label>
+      <input type="text" id="importVolunteerTitle" placeholder="e.g. Chapter President" />
     </div>
     <div class="edit-row" style="margin-bottom:12px;">
       <div class="edit-field" style="flex:1;">
@@ -548,6 +565,9 @@ function renderQuotes() {
     c += '<button class="card-btn" onclick="copyQuote(' + i + ')">Copy</button>';
     c += '</div>';
     c += '<div class="quote-meta"><span class="person-name">' + hsHtml + esc(q.person) + uploadLink + '</span>';
+    const detailParts = [q.jobTitle, q.company].filter(Boolean);
+    if (detailParts.length) c += '<span class="person-detail">' + esc(detailParts.join(', ')) + '</span>';
+    if (q.volunteerTitle) c += '<span class="badge badge-membership">' + esc(q.volunteerTitle) + '</span>';
     c += '<span class="badge badge-membership">' + esc(q.membership) + '</span>' + chapterBadge + topicBadges + '</div>';
 
     if (isEditing) {
@@ -555,6 +575,11 @@ function renderQuotes() {
       c += '<div class="edit-field"><label>Quote Text</label><textarea id="editText">' + esc(q.text) + '</textarea></div>';
       c += '<div class="edit-row">';
       c += '<div class="edit-field"><label>Person</label><input id="editPerson" value="' + esc(q.person) + '" /></div>';
+      c += '<div class="edit-field"><label>Job Title</label><input id="editJobTitle" value="' + esc(q.jobTitle || '') + '" /></div>';
+      c += '<div class="edit-field"><label>Company</label><input id="editCompany" value="' + esc(q.company || '') + '" /></div>';
+      c += '</div>';
+      c += '<div class="edit-row">';
+      c += '<div class="edit-field"><label>ASLA Volunteer Title</label><input id="editVolunteerTitle" value="' + esc(q.volunteerTitle || '') + '" /></div>';
       c += '<div class="edit-field"><label>Membership Type</label><select id="editMembership">' + makeOptions(categories.memberships, q.membership) + '</select></div>';
       c += '<div class="edit-field"><label>Chapter</label><select id="editChapter">' + makeOptions(categories.chapters, q.chapter) + '</select></div>';
       c += '</div>';
@@ -625,25 +650,25 @@ function cancelEdit() { editingKey = null; renderQuotes(); }
 async function saveEdit(key) {
   const text = document.getElementById('editText').value.trim();
   const person = document.getElementById('editPerson').value.trim();
+  const jobTitle = document.getElementById('editJobTitle').value.trim();
+  const company = document.getElementById('editCompany').value.trim();
+  const volunteerTitle = document.getElementById('editVolunteerTitle').value.trim();
   const membership = document.getElementById('editMembership').value;
   const chapter = document.getElementById('editChapter').value;
   const tops = Array.from(document.querySelectorAll('input[name="editTopic"]:checked')).map(cb => cb.value);
   if (!text || !person) { showToast('Quote text and person are required'); return; }
-  const updates = { text, person, membership, chapter, topics: tops };
+  const updates = { text, person, jobTitle, company, volunteerTitle, membership, chapter, topics: tops };
   const q = quotes.find(q => q._key === key);
-  const oldPerson = q ? q.person : '';
-  const membershipChanged = q && q.membership !== membership;
-  const chapterChanged = q && q.chapter !== chapter;
+  const personFields = ['membership', 'chapter', 'jobTitle', 'company', 'volunteerTitle'];
+  const changed = personFields.filter(f => q && q[f] !== updates[f]);
   await fetch(DB_URL + '/quotes/' + key + '.json', { method: 'PATCH', body: JSON.stringify(updates), headers: { 'Content-Type': 'application/json' } });
   if (q) Object.assign(q, updates);
-  // If membership or chapter changed, update all quotes for this person
-  if ((membershipChanged || chapterChanged) && person) {
+  if (changed.length > 0 && person) {
     const others = quotes.filter(oq => oq.person === person && oq._key !== key);
-    if (others.length > 0 && confirm('Update ' + (membershipChanged ? 'membership type' : '') + (membershipChanged && chapterChanged ? ' and ' : '') + (chapterChanged ? 'chapter' : '') + ' for all ' + (others.length + 1) + ' quotes by ' + person + '?')) {
+    if (others.length > 0 && confirm('Update ' + changed.join(', ') + ' for all ' + (others.length + 1) + ' quotes by ' + person + '?')) {
       for (const oq of others) {
         const patch = {};
-        if (membershipChanged) { patch.membership = membership; oq.membership = membership; }
-        if (chapterChanged) { patch.chapter = chapter; oq.chapter = chapter; }
+        changed.forEach(f => { patch[f] = updates[f]; oq[f] = updates[f]; });
         await fetch(DB_URL + '/quotes/' + oq._key + '.json', { method: 'PATCH', body: JSON.stringify(patch), headers: { 'Content-Type': 'application/json' } });
       }
       showToast('Updated ' + (others.length + 1) + ' quotes for ' + person);
@@ -671,6 +696,9 @@ async function confirmDelete(key) {
 function openAddModal() {
   document.getElementById('addModalTitle').textContent = 'Add New Quote';
   document.getElementById('addPerson').value = '';
+  document.getElementById('addJobTitle').value = '';
+  document.getElementById('addCompany').value = '';
+  document.getElementById('addVolunteerTitle').value = '';
   document.getElementById('addText').value = '';
   document.getElementById('addMembership').innerHTML = makeOptions(categories.memberships, categories.memberships[0]);
   document.getElementById('addChapter').innerHTML = makeOptions(categories.chapters, categories.chapters[0]);
@@ -681,12 +709,15 @@ function closeAddModal() { document.getElementById('addModal').classList.remove(
 
 async function saveNewQuote() {
   const person = document.getElementById('addPerson').value.trim();
+  const jobTitle = document.getElementById('addJobTitle').value.trim();
+  const company = document.getElementById('addCompany').value.trim();
+  const volunteerTitle = document.getElementById('addVolunteerTitle').value.trim();
   const text = document.getElementById('addText').value.trim();
   const membership = document.getElementById('addMembership').value;
   const chapter = document.getElementById('addChapter').value;
   const tops = Array.from(document.querySelectorAll('input[name="addTopic"]:checked')).map(cb => cb.value);
   if (!person || !text) { showToast('Person and quote text are required'); return; }
-  const data = { person, text, membership, chapter, topics: tops };
+  const data = { person, jobTitle, company, volunteerTitle, text, membership, chapter, topics: tops };
   const res = await fetch(DB_URL + '/quotes.json', { method: 'POST', body: JSON.stringify(data), headers: { 'Content-Type': 'application/json' } });
   const result = await res.json();
   quotes.push({ ...data, _key: result.name });
@@ -699,6 +730,9 @@ async function saveNewQuote() {
 // --- Import Quotes ---
 function openImportModal() {
   document.getElementById('importPerson').value = '';
+  document.getElementById('importJobTitle').value = '';
+  document.getElementById('importCompany').value = '';
+  document.getElementById('importVolunteerTitle').value = '';
   document.getElementById('importText').value = '';
   document.getElementById('importMembership').innerHTML = makeOptions(categories.memberships, categories.memberships[0]);
   document.getElementById('importChapter').innerHTML = makeOptions(categories.chapters, categories.chapters[0]);
@@ -725,6 +759,9 @@ function updateImportPreview() {
 
 async function doImport() {
   const person = document.getElementById('importPerson').value.trim();
+  const jobTitle = document.getElementById('importJobTitle').value.trim();
+  const company = document.getElementById('importCompany').value.trim();
+  const volunteerTitle = document.getElementById('importVolunteerTitle').value.trim();
   const membership = document.getElementById('importMembership').value;
   const chapter = document.getElementById('importChapter').value;
   const tops = Array.from(document.querySelectorAll('input[name="importTopic"]:checked')).map(cb => cb.value);
@@ -736,7 +773,7 @@ async function doImport() {
 
   let count = 0;
   for (const text of parsed) {
-    const data = { person, text, membership, chapter, topics: tops };
+    const data = { person, jobTitle, company, volunteerTitle, text, membership, chapter, topics: tops };
     const res = await fetch(DB_URL + '/quotes.json', { method: 'POST', body: JSON.stringify(data), headers: { 'Content-Type': 'application/json' } });
     const result = await res.json();
     quotes.push({ ...data, _key: result.name });
@@ -834,7 +871,12 @@ function copyQuote(idx) {
   const filters = getFilters();
   const filtered = quotes.filter(q => matchesFilters(q, filters));
   const q = filtered[idx];
-  const text = '\u201C' + q.text + '\u201D \u2014 ' + q.person + ', ' + q.membership;
+  const parts = [q.person];
+  if (q.jobTitle) parts.push(q.jobTitle);
+  if (q.company) parts.push(q.company);
+  if (q.volunteerTitle) parts.push(q.volunteerTitle);
+  parts.push(q.membership);
+  const text = '\u201C' + q.text + '\u201D \u2014 ' + parts.join(', ');
   navigator.clipboard.writeText(text).then(() => {
     const card = document.getElementById('card-' + idx);
     card.classList.add('copied');
