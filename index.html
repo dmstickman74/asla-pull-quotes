@@ -181,6 +181,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
     <div style="display:flex;gap:8px;">
       <button class="btn" onclick="clearFilters()">Clear Filters</button>
       <button class="btn btn-add" id="addBtn" style="display:none;" onclick="openAddModal()">+ Add Quote</button>
+      <button class="btn btn-add" id="importBtn" style="display:none;" onclick="openImportModal()">Import Quotes</button>
       <button class="btn" id="manageCatsBtn" style="display:none;" onclick="openCategoryModal()">Manage Categories</button>
     </div>
   </div>
@@ -218,6 +219,41 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
     <div class="edit-buttons">
       <button class="btn btn-primary" id="addModalSave" onclick="saveNewQuote()">Save Quote</button>
       <button class="btn" onclick="closeAddModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import Quotes Modal -->
+<div class="modal-overlay" id="importModal">
+  <div class="modal" style="max-width:700px;">
+    <h3>Import Quotes</h3>
+    <p style="font-size:13px;color:#666;margin-bottom:16px;">Add multiple quotes for one person. Enter each quote on its own line, or separate with a blank line. Set the person details below — they'll apply to all imported quotes.</p>
+    <div class="edit-field">
+      <label>Person</label>
+      <input type="text" id="importPerson" placeholder="Full name" />
+    </div>
+    <div class="edit-row" style="margin-bottom:12px;">
+      <div class="edit-field" style="flex:1;">
+        <label>Membership Type</label>
+        <select id="importMembership"></select>
+      </div>
+      <div class="edit-field" style="flex:1;">
+        <label>Chapter / Region</label>
+        <select id="importChapter"></select>
+      </div>
+    </div>
+    <div class="edit-field">
+      <label>Topics (applied to all)</label>
+      <div class="cb-group" id="importTopics"></div>
+    </div>
+    <div class="edit-field" style="margin-top:12px;">
+      <label>Quotes (one per line, or separated by blank lines)</label>
+      <textarea id="importText" rows="12" placeholder="Paste quotes here...&#10;&#10;Each quote on its own line.&#10;Or separate with a blank line for multi-sentence quotes." style="font-size:13px;"></textarea>
+    </div>
+    <div id="importPreview" style="margin-top:12px;font-size:13px;color:#666;"></div>
+    <div class="edit-buttons">
+      <button class="btn btn-primary" onclick="doImport()">Import All</button>
+      <button class="btn" onclick="closeImportModal()">Cancel</button>
     </div>
   </div>
 </div>
@@ -386,6 +422,7 @@ function toggleAdmin() {
   adminMode = !adminMode;
   document.getElementById('adminToggle').classList.toggle('active', adminMode);
   document.getElementById('addBtn').style.display = adminMode ? 'inline-block' : 'none';
+  document.getElementById('importBtn').style.display = adminMode ? 'inline-block' : 'none';
   document.getElementById('manageCatsBtn').style.display = adminMode ? 'inline-block' : 'none';
   editingKey = null;
   renderQuotes();
@@ -659,6 +696,59 @@ async function saveNewQuote() {
   showToast('Quote added!');
 }
 
+// --- Import Quotes ---
+function openImportModal() {
+  document.getElementById('importPerson').value = '';
+  document.getElementById('importText').value = '';
+  document.getElementById('importMembership').innerHTML = makeOptions(categories.memberships, categories.memberships[0]);
+  document.getElementById('importChapter').innerHTML = makeOptions(categories.chapters, categories.chapters[0]);
+  document.getElementById('importTopics').innerHTML = makeTopicCheckboxes(categories.topics, [], 'importTopic');
+  document.getElementById('importPreview').textContent = '';
+  document.getElementById('importModal').classList.add('active');
+  document.getElementById('importText').addEventListener('input', updateImportPreview);
+}
+function closeImportModal() { document.getElementById('importModal').classList.remove('active'); }
+
+function parseImportQuotes(text) {
+  const raw = text.trim();
+  if (!raw) return [];
+  if (raw.includes('\n\n')) {
+    return raw.split(/\n\n+/).map(q => q.replace(/\n/g, ' ').trim()).filter(q => q.length > 0);
+  }
+  return raw.split(/\n/).map(q => q.trim()).filter(q => q.length > 0);
+}
+
+function updateImportPreview() {
+  const parsed = parseImportQuotes(document.getElementById('importText').value);
+  document.getElementById('importPreview').textContent = parsed.length + ' quote' + (parsed.length !== 1 ? 's' : '') + ' detected';
+}
+
+async function doImport() {
+  const person = document.getElementById('importPerson').value.trim();
+  const membership = document.getElementById('importMembership').value;
+  const chapter = document.getElementById('importChapter').value;
+  const tops = Array.from(document.querySelectorAll('input[name="importTopic"]:checked')).map(cb => cb.value);
+  const parsed = parseImportQuotes(document.getElementById('importText').value);
+
+  if (!person) { showToast('Person name is required'); return; }
+  if (parsed.length === 0) { showToast('No quotes to import'); return; }
+  if (!confirm('Import ' + parsed.length + ' quotes for ' + person + '?')) return;
+
+  let count = 0;
+  for (const text of parsed) {
+    const data = { person, text, membership, chapter, topics: tops };
+    const res = await fetch(DB_URL + '/quotes.json', { method: 'POST', body: JSON.stringify(data), headers: { 'Content-Type': 'application/json' } });
+    const result = await res.json();
+    quotes.push({ ...data, _key: result.name });
+    count++;
+  }
+
+  closeImportModal();
+  rebuildFilters();
+  renderQuotes();
+  showToast(count + ' quotes imported for ' + person);
+}
+
 // --- Category Management ---
 function openCategoryModal() {
   renderCategoryLists();
@@ -771,6 +861,7 @@ document.getElementById('searchInput').addEventListener('input', () => {
 });
 document.getElementById('addModal').addEventListener('click', e => { if (e.target.id === 'addModal') closeAddModal(); });
 document.getElementById('categoryModal').addEventListener('click', e => { if (e.target.id === 'categoryModal') closeCategoryModal(); });
+document.getElementById('importModal').addEventListener('click', e => { if (e.target.id === 'importModal') closeImportModal(); });
 </script>
 </body>
 </html>
