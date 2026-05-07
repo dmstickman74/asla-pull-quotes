@@ -498,7 +498,6 @@ function renderQuotes() {
     const pKey = personKey(q.person);
     const hasPhoto = !!headshots[pKey];
     const uploadLink = adminMode ? '<span class="upload-headshot" onclick="uploadHeadshot(\'' + pKey + '\',\'' + esc(q.person) + '\')">' + (hasPhoto ? 'change photo' : 'add photo') + '</span>' : '';
-    const dlLink = hasPhoto ? '<span class="dl-headshot" onclick="downloadHeadshot(\'' + pKey + '\',\'' + esc(q.person) + '\')">download photo</span>' : '';
 
     let c = '<div class="quote-card' + (isEditing ? ' editing' : '') + '" id="card-' + i + '">';
     c += '<div class="card-actions">';
@@ -506,9 +505,12 @@ function renderQuotes() {
       c += '<button class="card-btn" onclick="startEdit(\'' + q._key + '\')">Edit</button>';
       c += '<button class="card-btn delete" onclick="confirmDelete(\'' + q._key + '\')">Delete</button>';
     }
+    if (hasPhoto) {
+      c += '<button class="card-btn" onclick="downloadHeadshot(\'' + pKey + '\',\'' + esc(q.person) + '\')">Download Photo</button>';
+    }
     c += '<button class="card-btn" onclick="copyQuote(' + i + ')">Copy</button>';
     c += '</div>';
-    c += '<div class="quote-meta"><span class="person-name">' + hsHtml + esc(q.person) + uploadLink + dlLink + '</span>';
+    c += '<div class="quote-meta"><span class="person-name">' + hsHtml + esc(q.person) + uploadLink + '</span>';
     c += '<span class="badge badge-membership">' + esc(q.membership) + '</span>' + chapterBadge + topicBadges + '</div>';
 
     if (isEditing) {
