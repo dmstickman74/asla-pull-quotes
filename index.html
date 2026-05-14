@@ -141,7 +141,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
   .quote-card { padding: 14px 16px; }
   .header { padding: 16px; }
 }
+.import-tab { padding: 8px 20px; border: none; background: none; font-size: 14px; font-weight: 500; color: #888; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+.import-tab:hover { color: #555; }
+.import-tab.active { color: #1a5632; border-bottom-color: #1a5632; }
+#dropZone.dragover { border-color: #1a5632; background: #e8f5e9; }
 </style>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -271,43 +276,70 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 
 <!-- Import Quotes Modal -->
 <div class="modal-overlay" id="importModal">
-  <div class="modal" style="max-width:700px;">
+  <div class="modal" style="max-width:750px;">
     <h3>Import Quotes</h3>
-    <p style="font-size:13px;color:#666;margin-bottom:16px;">Add multiple quotes for one person. Enter each quote on its own line, or separate with a blank line. Set the person details below — they'll apply to all imported quotes.</p>
-    <div class="edit-field">
-      <label>Person</label>
-      <input type="text" id="importPerson" placeholder="Full name" />
+    <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:2px solid #eee;">
+      <button class="import-tab active" id="tabUpload" onclick="switchImportTab('upload')">Upload Spreadsheet</button>
+      <button class="import-tab" id="tabPaste" onclick="switchImportTab('paste')">Paste Text</button>
     </div>
-    <div class="edit-row" style="margin-bottom:12px;">
-      <div class="edit-field" style="flex:1;"><label>Job Title</label><input type="text" id="importJobTitle" placeholder="e.g. Principal" /></div>
-      <div class="edit-field" style="flex:1;"><label>Company</label><input type="text" id="importCompany" placeholder="e.g. Smith & Associates" /></div>
-    </div>
-    <div class="edit-field" style="margin-bottom:12px;">
-      <label>ASLA Volunteer Title</label>
-      <input type="text" id="importVolunteerTitle" placeholder="e.g. Chapter President" />
-    </div>
-    <div class="edit-row" style="margin-bottom:12px;">
-      <div class="edit-field" style="flex:1;">
-        <label>Membership Type</label>
-        <select id="importMembership"></select>
+    <div id="importUploadPane">
+      <p style="font-size:13px;color:#666;margin-bottom:12px;">Upload a completed spreadsheet with one quote per row. Each row can have its own person, job title, company, membership, chapter, and topics.</p>
+      <div style="margin-bottom:16px;">
+        <a href="ASLA_MemberVoices_Import_Template.xlsx" download style="color:#1565c0;font-size:13px;font-weight:600;text-decoration:none;">&#11015; Download Import Template (.xlsx)</a>
+        <span style="font-size:12px;color:#999;margin-left:8px;">Fill this out, then upload below</span>
       </div>
-      <div class="edit-field" style="flex:1;">
-        <label>Chapter / Region</label>
-        <select id="importChapter"></select>
+      <div id="dropZone" style="border:2px dashed #ccc;border-radius:10px;padding:40px 20px;text-align:center;cursor:pointer;transition:all 0.2s;background:#fafafa;" onclick="document.getElementById('xlsxFile').click()">
+        <div style="font-size:32px;margin-bottom:8px;">&#128196;</div>
+        <div style="font-size:14px;color:#555;font-weight:500;">Click to choose file or drag &amp; drop</div>
+        <div style="font-size:12px;color:#999;margin-top:4px;">.xlsx, .xls, or .csv</div>
+        <input type="file" id="xlsxFile" accept=".xlsx,.xls,.csv" style="display:none;" onchange="handleFileUpload(this)" />
+      </div>
+      <div id="uploadPreview" style="margin-top:16px;display:none;">
+        <div style="font-size:13px;font-weight:600;color:#1a5632;margin-bottom:8px;" id="uploadSummary"></div>
+        <div style="max-height:250px;overflow-y:auto;border:1px solid #eee;border-radius:6px;font-size:12px;" id="uploadTable"></div>
+      </div>
+      <div class="edit-buttons" id="uploadButtons" style="display:none;">
+        <button class="btn btn-primary" onclick="doFileImport()">Import All</button>
+        <button class="btn" onclick="closeImportModal()">Cancel</button>
       </div>
     </div>
-    <div class="edit-field">
-      <label>Topics (applied to all)</label>
-      <div class="cb-group" id="importTopics"></div>
-    </div>
-    <div class="edit-field" style="margin-top:12px;">
-      <label>Quotes (one per line, or separated by blank lines)</label>
-      <textarea id="importText" rows="12" placeholder="Paste quotes here...&#10;&#10;Each quote on its own line.&#10;Or separate with a blank line for multi-sentence quotes." style="font-size:13px;"></textarea>
-    </div>
-    <div id="importPreview" style="margin-top:12px;font-size:13px;color:#666;"></div>
-    <div class="edit-buttons">
-      <button class="btn btn-primary" onclick="doImport()">Import All</button>
-      <button class="btn" onclick="closeImportModal()">Cancel</button>
+    <div id="importPastePane" style="display:none;">
+      <p style="font-size:13px;color:#666;margin-bottom:12px;">Add multiple quotes for one person. All quotes below will share the same person details and tags.</p>
+      <div class="edit-field">
+        <label>Person</label>
+        <input type="text" id="importPerson" placeholder="Full name" />
+      </div>
+      <div class="edit-row" style="margin-bottom:12px;">
+        <div class="edit-field" style="flex:1;"><label>Job Title</label><input type="text" id="importJobTitle" placeholder="e.g. Principal" /></div>
+        <div class="edit-field" style="flex:1;"><label>Company</label><input type="text" id="importCompany" placeholder="e.g. Smith & Associates" /></div>
+      </div>
+      <div class="edit-field" style="margin-bottom:12px;">
+        <label>ASLA Volunteer Title</label>
+        <input type="text" id="importVolunteerTitle" placeholder="e.g. Chapter President" />
+      </div>
+      <div class="edit-row" style="margin-bottom:12px;">
+        <div class="edit-field" style="flex:1;">
+          <label>Membership Type</label>
+          <select id="importMembership"></select>
+        </div>
+        <div class="edit-field" style="flex:1;">
+          <label>Chapter / Region</label>
+          <select id="importChapter"></select>
+        </div>
+      </div>
+      <div class="edit-field">
+        <label>Topics (applied to all)</label>
+        <div class="cb-group" id="importTopics"></div>
+      </div>
+      <div class="edit-field" style="margin-top:12px;">
+        <label>Quotes (one per line, or separated by blank lines)</label>
+        <textarea id="importText" rows="10" placeholder="Paste quotes here...&#10;&#10;Each quote on its own line.&#10;Or separate with a blank line for multi-sentence quotes." style="font-size:13px;"></textarea>
+      </div>
+      <div id="importPreview" style="margin-top:12px;font-size:13px;color:#666;"></div>
+      <div class="edit-buttons">
+        <button class="btn btn-primary" onclick="doImport()">Import All</button>
+        <button class="btn" onclick="closeImportModal()">Cancel</button>
+      </div>
     </div>
   </div>
 </div>
@@ -810,6 +842,15 @@ async function saveNewQuote() {
 }
 
 // --- Import Quotes ---
+let pendingFileRows = [];
+
+function switchImportTab(tab) {
+  document.getElementById('tabUpload').classList.toggle('active', tab === 'upload');
+  document.getElementById('tabPaste').classList.toggle('active', tab === 'paste');
+  document.getElementById('importUploadPane').style.display = tab === 'upload' ? 'block' : 'none';
+  document.getElementById('importPastePane').style.display = tab === 'paste' ? 'block' : 'none';
+}
+
 function openImportModal() {
   document.getElementById('importPerson').value = '';
   document.getElementById('importJobTitle').value = '';
@@ -820,11 +861,121 @@ function openImportModal() {
   document.getElementById('importChapter').innerHTML = makeOptions(categories.chapters, categories.chapters[0]);
   document.getElementById('importTopics').innerHTML = makeTopicCheckboxes(categories.topics, [], 'importTopic');
   document.getElementById('importPreview').textContent = '';
+  document.getElementById('xlsxFile').value = '';
+  document.getElementById('uploadPreview').style.display = 'none';
+  document.getElementById('uploadButtons').style.display = 'none';
+  pendingFileRows = [];
+  switchImportTab('upload');
   document.getElementById('importModal').classList.add('active');
   document.getElementById('importText').addEventListener('input', updateImportPreview);
 }
 function closeImportModal() { document.getElementById('importModal').classList.remove('active'); }
 
+// --- Drag & Drop ---
+document.addEventListener('DOMContentLoaded', () => {
+  const dz = document.getElementById('dropZone');
+  if (!dz) return;
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file);
+  });
+});
+
+function handleFileUpload(input) {
+  const file = input.files[0];
+  if (file) processFile(file);
+}
+
+function processFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      const colMap = (row, ...keys) => {
+        for (const k of keys) {
+          const kn = k.toLowerCase().replace(/[^a-z]/g, '');
+          for (const col of Object.keys(row)) {
+            if (col.toLowerCase().replace(/[^a-z]/g, '').includes(kn)) return String(row[col] || '').trim();
+          }
+        }
+        return '';
+      };
+      pendingFileRows = raw.map(row => ({
+        person: colMap(row, 'Person', 'FullName', 'Name'),
+        jobTitle: colMap(row, 'JobTitle', 'Title'),
+        company: colMap(row, 'Company', 'Firm', 'Organization'),
+        volunteerTitle: colMap(row, 'VolunteerTitle', 'ASLAVolunteer', 'Volunteer'),
+        membership: colMap(row, 'MembershipType', 'Membership'),
+        chapter: colMap(row, 'Chapter', 'Region'),
+        topics: colMap(row, 'Topics', 'Topic', 'Tags').split(/[,;]+/).map(t => t.trim()).filter(Boolean),
+        text: colMap(row, 'QuoteText', 'Quote', 'Text'),
+      })).filter(r => r.text && r.person);
+      renderUploadPreview();
+    } catch (err) {
+      showToast('Error reading file: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderUploadPreview() {
+  if (pendingFileRows.length === 0) {
+    document.getElementById('uploadPreview').style.display = 'none';
+    document.getElementById('uploadButtons').style.display = 'none';
+    showToast('No valid rows found. Each row needs Person and Quote Text.');
+    return;
+  }
+  const people = new Set(pendingFileRows.map(r => r.person));
+  document.getElementById('uploadSummary').textContent = pendingFileRows.length + ' quote' + (pendingFileRows.length !== 1 ? 's' : '') + ' from ' + people.size + ' person' + (people.size !== 1 ? 's' : '') + ' ready to import';
+  let html = '<table style="width:100%;border-collapse:collapse;">';
+  html += '<tr style="background:#f5f5f5;position:sticky;top:0;">';
+  ['Person', 'Job Title', 'Company', 'Membership', 'Chapter', 'Topics', 'Quote'].forEach(h => {
+    html += '<th style="padding:6px 8px;text-align:left;font-size:11px;border-bottom:1px solid #ddd;">' + h + '</th>';
+  });
+  html += '</tr>';
+  pendingFileRows.slice(0, 50).forEach(r => {
+    html += '<tr>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid #f0f0f0;white-space:nowrap;">' + esc(r.person) + '</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid #f0f0f0;">' + esc(r.jobTitle) + '</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid #f0f0f0;">' + esc(r.company) + '</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid #f0f0f0;">' + esc(r.membership) + '</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid #f0f0f0;">' + esc(r.chapter) + '</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid #f0f0f0;">' + esc((r.topics || []).join(', ')) + '</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid #f0f0f0;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(r.text.substring(0, 80)) + (r.text.length > 80 ? '...' : '') + '</td>';
+    html += '</tr>';
+  });
+  if (pendingFileRows.length > 50) html += '<tr><td colspan="7" style="padding:8px;color:#999;text-align:center;">...and ' + (pendingFileRows.length - 50) + ' more</td></tr>';
+  html += '</table>';
+  document.getElementById('uploadTable').innerHTML = html;
+  document.getElementById('uploadPreview').style.display = 'block';
+  document.getElementById('uploadButtons').style.display = 'flex';
+}
+
+async function doFileImport() {
+  if (pendingFileRows.length === 0) { showToast('No rows to import'); return; }
+  const people = new Set(pendingFileRows.map(r => r.person));
+  if (!confirm('Import ' + pendingFileRows.length + ' quotes from ' + people.size + ' person' + (people.size !== 1 ? 's' : '') + '?')) return;
+  let count = 0;
+  for (const r of pendingFileRows) {
+    const data = { person: r.person, jobTitle: r.jobTitle, company: r.company, volunteerTitle: r.volunteerTitle, membership: r.membership, chapter: r.chapter, topics: r.topics, text: r.text };
+    const res = await fetch(DB_URL + '/quotes.json', { method: 'POST', body: JSON.stringify(data), headers: { 'Content-Type': 'application/json' } });
+    const result = await res.json();
+    quotes.push({ ...data, _key: result.name });
+    count++;
+  }
+  pendingFileRows = [];
+  closeImportModal();
+  rebuildFilters();
+  renderQuotes();
+  showToast(count + ' quotes imported from spreadsheet');
+}
+
+// --- Paste Import ---
 function parseImportQuotes(text) {
   const raw = text.trim();
   if (!raw) return [];
@@ -848,11 +999,9 @@ async function doImport() {
   const chapter = document.getElementById('importChapter').value;
   const tops = Array.from(document.querySelectorAll('input[name="importTopic"]:checked')).map(cb => cb.value);
   const parsed = parseImportQuotes(document.getElementById('importText').value);
-
   if (!person) { showToast('Person name is required'); return; }
   if (parsed.length === 0) { showToast('No quotes to import'); return; }
   if (!confirm('Import ' + parsed.length + ' quotes for ' + person + '?')) return;
-
   let count = 0;
   for (const text of parsed) {
     const data = { person, jobTitle, company, volunteerTitle, text, membership, chapter, topics: tops };
@@ -861,7 +1010,6 @@ async function doImport() {
     quotes.push({ ...data, _key: result.name });
     count++;
   }
-
   closeImportModal();
   rebuildFilters();
   renderQuotes();
