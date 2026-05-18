@@ -443,7 +443,7 @@ async function loadData() {
     if (qData && Object.keys(qData).length > 0) {
       quotes = Object.entries(qData).map(([key, val]) => ({ ...val, _key: key }));
     } else {
-      await seedDatabase();
+      quotes = [];
     }
 
     if (cData) {
